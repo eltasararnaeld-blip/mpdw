@@ -1,0 +1,756 @@
+---
+title: "Tugas MPDW"
+author: "Eltasar Arnaeld Jaesar"
+date: "2026-08-30"
+output:
+  rmdformats::readthedown
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+# Library/Packages
+
+```{r}
+library(forecast)
+library(graphics)
+library(TTR)
+library(TSA)
+library(rio)
+library(ggplot2)
+```
+
+# Import Data
+
+Data yang digunakan adalah **Data Beijing Air Quality**. Data terdiri atas dua variabel, yaitu `Periode` yang menunjukkan urutan periode pengamatan dan `Count` yang menunjukkan jumlah pengamatan pada setiap periode. Pada tugas ini digunakan bagian data **periode 195 sampai 388** sesuai dengan pembagian data kelompok.
+
+```{r}
+# Import data
+data1 <- import("Beijing_Air_Quality_Rapi.csv")
+
+# Melihat struktur data
+head(data1)
+str(data1)
+```
+
+## 1. Mengambil Data Periode 195–388
+
+```{r}
+# Mengambil observasi periode 195 sampai 388
+data2 <- subset(data1, Periode >= 195 & Periode <= 388)
+
+# Mengurutkan berdasarkan periode
+data2 <- data2[order(data2$Periode), ]
+
+# Cek ukuran data
+dim(data2)
+
+# Cek data awal dan akhir
+head(data2)
+tail(data2)
+```
+
+Data yang digunakan terdiri atas **194 observasi**, yaitu periode 195 sampai 388. Variabel yang digunakan dalam analisis deret waktu adalah `Count`.
+
+# Eksplorasi Data
+
+Eksplorasi data dilakukan untuk melihat struktur, ukuran, ringkasan, serta pola deret waktu pada data periode 195–388.
+
+```{r}
+View(data2)
+str(data2)
+dim(data2)
+```
+
+Mengubah variabel `Count` menjadi objek deret waktu menggunakan fungsi `ts()`.
+
+```{r}
+data.ts <- ts(data2$Count)
+```
+
+Menampilkan ringkasan data.
+
+```{r}
+summary(data.ts)
+```
+
+## 1. Plot Deret Waktu
+
+```{r}
+plot(
+  data2$Periode,
+  data2$Count,
+  type = "l",
+  xlab = "Periode",
+  ylab = "Count",
+  main = "Plot Deret Waktu Data Beijing Air Quality"
+)
+```
+
+Berdasarkan plot deret waktu, nilai `Count` mengalami fluktuasi dari satu periode ke periode berikutnya. Sebagian besar nilai berada pada kisaran yang relatif tinggi, tetapi terdapat beberapa periode dengan nilai yang jauh lebih rendah. Pola tersebut menunjukkan bahwa data memiliki perubahan nilai yang cukup besar pada beberapa periode tertentu.
+
+# Pembagian Data Latih dan Data Uji
+
+Pembagian data dilakukan dengan perbandingan **80% data latih dan 20% data uji**. Dari 194 observasi, sebanyak 155 observasi digunakan sebagai data latih dan 39 observasi digunakan sebagai data uji.
+
+```{r}
+# Jumlah observasi
+n <- nrow(data2)
+
+# Menentukan batas 80%
+n_train <- floor(0.8 * n)
+
+# Membagi data training dan testing
+training <- data2[1:n_train, ]
+testing <- data2[(n_train + 1):n, ]
+
+# Mengubah menjadi time series
+train.ts <- ts(training$Count)
+test.ts <- ts(testing$Count)
+
+# Mengecek jumlah observasi
+length(train.ts)
+length(test.ts)
+```
+
+Data latih terdiri atas **155 observasi**, sedangkan data uji terdiri atas **39 observasi**. Data latih digunakan untuk membentuk model pemulusan, sedangkan data uji digunakan untuk mengevaluasi kemampuan model dalam melakukan peramalan pada data yang belum digunakan dalam proses pemodelan.
+
+## Eksplorasi Data Latih dan Data Uji
+
+```{r}
+# Plot data latih
+plot(
+  train.ts,
+  type = "l",
+  xlab = "Periode",
+  ylab = "Count",
+  main = "Plot Data Latih"
+)
+
+# Plot data uji
+plot(
+  test.ts,
+  type = "l",
+  xlab = "Periode",
+  ylab = "Count",
+  main = "Plot Data Uji"
+)
+```
+
+```{r}
+ggplot() +
+  geom_line(
+    data = training,
+    aes(x = Periode, y = Count, color = "Data Latih")
+  ) +
+  geom_line(
+    data = testing,
+    aes(x = Periode, y = Count, color = "Data Uji")
+  ) +
+  labs(
+    x = "Periode",
+    y = "Count",
+    color = "Keterangan"
+  ) +
+  scale_colour_manual(
+    values = c("Data Latih" = "blue", "Data Uji" = "red")
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+# Moving Average
+
+Moving Average merupakan metode pemulusan yang menggunakan beberapa pengamatan sebelumnya untuk memperoleh nilai pemulusan. Metode ini memberikan bobot yang sama pada setiap pengamatan yang termasuk dalam periode pemulusan. Pada analisis ini digunakan **m = 12** sebagai panjang periode moving average.
+
+## 1. Single Moving Average (SMA)
+
+Single Moving Average (SMA) merupakan metode pemulusan yang menghitung rata-rata dari sejumlah pengamatan terakhir. Nilai pemulusan pada periode ke-t diperoleh dari rata-rata m pengamatan sebelumnya.
+
+\(S_t = \frac{1}{m}\sum_{i=t-m+1}^{t}X_i\)
+
+Nilai pemulusan pada periode terakhir digunakan sebagai dasar untuk melakukan peramalan periode berikutnya.
+
+```{r}
+# Parameter SMA
+m <- 12
+
+# Pemulusan SMA
+sma <- SMA(train.ts, n = m)
+
+# Melihat hasil pemulusan
+head(sma, 20)
+```
+
+Peramalan untuk data uji dilakukan dengan menggunakan nilai SMA terakhir sebagai nilai ramalan untuk periode-periode berikutnya.
+
+```{r}
+# Ramalan sebanyak jumlah data uji
+forecast_sma <- rep(
+  tail(na.omit(sma), 1),
+  length(test.ts)
+)
+
+head(forecast_sma)
+```
+
+## 2. Plot Hasil SMA
+
+```{r}
+plot(
+  data.ts,
+  type = "l",
+  xlab = "Periode",
+  ylab = "Count",
+  main = "Single Moving Average (SMA)"
+)
+
+lines(
+  c(rep(NA, m - 1), sma),
+  col = "blue",
+  lwd = 2
+)
+
+lines(
+  c(
+    rep(NA, length(train.ts)),
+    forecast_sma
+  ),
+  col = "red",
+  lwd = 2
+)
+
+legend(
+  "bottomleft",
+  c("Data Aktual", "Pemulusan SMA", "Peramalan SMA"),
+  col = c("black", "blue", "red"),
+  lty = 1,
+  cex = 0.7
+)
+```
+
+## 3. Akurasi SMA
+
+Perhitungan akurasi dilakukan menggunakan ukuran **SSE, MSE, RMSE, dan MAPE**. Semakin kecil nilai ukuran kesalahan, semakin baik kemampuan model dalam melakukan peramalan.
+
+\(SSE = \sum_{t=1}^{n}(y_t-\hat{y}_t)^2\)
+
+\(MSE = \frac{1}{n}\sum_{t=1}^{n}(y_t-\hat{y}_t)^2\)
+
+\(RMSE = \sqrt{MSE}\)
+
+\(MAPE = \frac{1}{n}\sum_{t=1}^{n}\left|\frac{y_t-\hat{y}_t}{y_t}\right|\times100\)
+
+```{r}
+# Error SMA pada data uji
+error_sma <- test.ts - forecast_sma
+
+# SSE
+SSE_sma <- sum(error_sma^2)
+
+# MSE
+MSE_sma <- mean(error_sma^2)
+
+# RMSE
+RMSE_sma <- sqrt(MSE_sma)
+
+# MAPE
+MAPE_sma <- mean(
+  abs(error_sma / test.ts) * 100
+)
+
+akurasi_sma <- matrix(
+  c(SSE_sma, MSE_sma, RMSE_sma, MAPE_sma),
+  nrow = 4
+)
+
+row.names(akurasi_sma) <- c(
+  "SSE",
+  "MSE",
+  "RMSE",
+  "MAPE"
+)
+
+colnames(akurasi_sma) <- "SMA m = 12"
+
+akurasi_sma
+```
+
+Berdasarkan nilai akurasi yang diperoleh, performa SMA dapat dilihat dari nilai SSE, MSE, RMSE, dan MAPE pada data uji. Nilai kesalahan yang lebih kecil menunjukkan bahwa hasil peramalan semakin mendekati nilai aktual.
+
+# Double Moving Average (DMA)
+
+Double Moving Average (DMA) merupakan metode pemulusan yang dilakukan sebanyak dua kali. Metode ini dapat digunakan ketika data memiliki kecenderungan tren. Tahap pertama dilakukan dengan menghitung SMA dari data asli, kemudian tahap kedua dilakukan dengan menghitung SMA dari hasil pemulusan pertama.
+
+\(S_{1,t} = \frac{1}{m}\sum_{i=t-m+1}^{t}X_i\)
+
+\(S_{2,t} = \frac{1}{m}\sum_{i=t-m+1}^{t}S_{1,i}\)
+
+Komponen level dan tren diperoleh menggunakan persamaan:
+
+\(A_t = 2S_{1,t}-S_{2,t}\)
+
+\(B_t = \frac{2}{m-1}(S_{1,t}-S_{2,t})\)
+
+Peramalan h periode ke depan dilakukan dengan:
+
+\(F_{t+h}=A_t+B_th\)
+
+## 1. Pemulusan DMA
+
+```{r}
+# SMA tahap pertama
+sma1 <- SMA(train.ts, n = m)
+
+# SMA tahap kedua
+sma2 <- SMA(sma1, n = m)
+
+# Komponen level
+At <- 2 * sma1 - sma2
+
+# Komponen trend
+Bt <- 2 / (m - 1) * (sma1 - sma2)
+
+# Melihat hasil
+head(At, 20)
+head(Bt, 20)
+```
+
+## 2. Peramalan DMA
+
+```{r}
+# Membuat ramalan sebanyak data uji
+h <- length(test.ts)
+
+forecast_dma <- numeric(h)
+
+for (i in 1:h) {
+  forecast_dma[i] <-
+    tail(At, 1) + tail(Bt, 1) * i
+}
+
+head(forecast_dma)
+```
+
+## 3. Plot Hasil DMA
+
+```{r}
+plot(
+  data.ts,
+  type = "l",
+  xlab = "Periode",
+  ylab = "Count",
+  main = "Double Moving Average (DMA)"
+)
+
+lines(
+  c(
+    rep(NA, length(train.ts) - length(sma2)),
+    sma2
+  ),
+  col = "blue",
+  lwd = 2
+)
+
+lines(
+  c(
+    rep(NA, length(train.ts)),
+    forecast_dma
+  ),
+  col = "red",
+  lwd = 2
+)
+
+legend(
+  "bottomleft",
+  c("Data Aktual", "Pemulusan DMA", "Peramalan DMA"),
+  col = c("black", "blue", "red"),
+  lty = 1,
+  cex = 0.7
+)
+```
+
+## 4. Akurasi DMA
+
+```{r}
+# Error DMA
+error_dma <- test.ts - forecast_dma
+
+# SSE
+SSE_dma <- sum(error_dma^2)
+
+# MSE
+MSE_dma <- mean(error_dma^2)
+
+# RMSE
+RMSE_dma <- sqrt(MSE_dma)
+
+# MAPE
+MAPE_dma <- mean(
+  abs(error_dma / test.ts) * 100
+)
+
+akurasi_dma <- matrix(
+  c(SSE_dma, MSE_dma, RMSE_dma, MAPE_dma),
+  nrow = 4
+)
+
+row.names(akurasi_dma) <- c(
+  "SSE",
+  "MSE",
+  "RMSE",
+  "MAPE"
+)
+
+colnames(akurasi_dma) <- "DMA m = 12"
+
+akurasi_dma
+```
+
+Berdasarkan hasil akurasi data uji, performa DMA dievaluasi menggunakan SSE, MSE, RMSE, dan MAPE. Nilai error yang semakin kecil menunjukkan bahwa hasil peramalan DMA semakin mendekati nilai aktual. Karena DMA mempertimbangkan komponen level dan tren, metode ini dapat menghasilkan peramalan yang berbeda dari SMA.
+
+# Exponential Smoothing
+
+Exponential Smoothing merupakan metode pemulusan yang memberikan bobot lebih besar pada pengamatan terbaru. Bobot terhadap pengamatan yang lebih lama akan semakin kecil secara eksponensial. Metode ini dapat digunakan untuk menghasilkan nilai pemulusan dan peramalan berdasarkan data historis.
+
+# Single Exponential Smoothing (SES)
+
+Single Exponential Smoothing (SES) merupakan metode pemulusan yang sesuai digunakan pada data yang tidak memiliki tren yang kuat. Nilai pemulusan diperoleh dengan memberikan bobot tertentu pada data aktual terbaru dan nilai pemulusan sebelumnya.
+
+\(S_t = \alpha X_t+(1-\alpha)S_{t-1}\)
+
+Nilai parameter $\alpha$ berada pada interval 0 sampai 1. Semakin besar nilai $\alpha$, semakin besar bobot yang diberikan kepada pengamatan terbaru.
+
+## 1. SES dengan Alpha = 0.2
+
+```{r}
+ses_02 <- ses(
+  train.ts,
+  h = length(test.ts),
+  alpha = 0.2
+)
+
+ses_02
+```
+
+## 2. SES dengan Alpha = 0.7
+
+```{r}
+ses_07 <- ses(
+  train.ts,
+  h = length(test.ts),
+  alpha = 0.7
+)
+
+ses_07
+```
+
+## 3. SES dengan Alpha Optimum
+
+```{r}
+ses_opt <- ses(
+  train.ts,
+  h = length(test.ts),
+  alpha = NULL
+)
+
+ses_opt
+```
+
+Parameter optimum dipilih berdasarkan proses optimasi yang dilakukan oleh fungsi `ses()`. Parameter tersebut menghasilkan nilai error terkecil berdasarkan data latih.
+
+## 4. Plot SES
+
+```{r}
+autoplot(ses_02) +
+  autolayer(
+    fitted(ses_02),
+    series = "SES Alpha 0.2"
+  ) +
+  autolayer(
+    fitted(ses_07),
+    series = "SES Alpha 0.7"
+  ) +
+  autolayer(
+    fitted(ses_opt),
+    series = "SES Optimum"
+  ) +
+  xlab("Periode") +
+  ylab("Count") +
+  ggtitle("Single Exponential Smoothing")
+```
+
+## 5. Akurasi SES
+
+```{r}
+# Ramalan masing-masing model
+forecast_ses02 <- as.numeric(ses_02$mean)
+forecast_ses07 <- as.numeric(ses_07$mean)
+forecast_sesopt <- as.numeric(ses_opt$mean)
+
+# Fungsi menghitung akurasi
+hitung_akurasi <- function(aktual, ramalan) {
+  
+  error <- aktual - ramalan
+  
+  SSE <- sum(error^2)
+  MSE <- mean(error^2)
+  RMSE <- sqrt(MSE)
+  MAPE <- mean(abs(error / aktual)) * 100
+  
+  return(
+    c(
+      SSE = SSE,
+      MSE = MSE,
+      RMSE = RMSE,
+      MAPE = MAPE
+    )
+  )
+}
+
+akurasi_ses02 <- hitung_akurasi(
+  test.ts,
+  forecast_ses02
+)
+
+akurasi_ses07 <- hitung_akurasi(
+  test.ts,
+  forecast_ses07
+)
+
+akurasi_sesopt <- hitung_akurasi(
+  test.ts,
+  forecast_sesopt
+)
+
+akurasi_ses <- rbind(
+  "SES Alpha 0.2" = akurasi_ses02,
+  "SES Alpha 0.7" = akurasi_ses07,
+  "SES Optimum" = akurasi_sesopt
+)
+
+akurasi_ses
+```
+
+Berdasarkan hasil evaluasi, model SES dengan nilai error terkecil merupakan model SES yang memberikan hasil peramalan paling baik pada data uji. Perbandingan dilakukan menggunakan nilai SSE, MSE, RMSE, dan MAPE.
+
+# Double Exponential Smoothing (DES)
+
+Double Exponential Smoothing (DES) merupakan metode pemulusan yang digunakan untuk data yang memiliki kecenderungan tren. Berbeda dengan SES yang hanya melakukan pemulusan level, DES mempertimbangkan komponen level dan tren dalam menghasilkan peramalan.
+
+## 1. DES dengan Parameter Awal
+
+```{r}
+des_1 <- HoltWinters(
+  train.ts,
+  gamma = FALSE,
+  alpha = 0.2,
+  beta = 0.2
+)
+
+ramalan_des1 <- forecast(
+  des_1,
+  h = length(test.ts)
+)
+
+des_1
+```
+
+## 2. DES dengan Alpha = 0.6 dan Beta = 0.3
+
+```{r}
+des_2 <- HoltWinters(
+  train.ts,
+  gamma = FALSE,
+  alpha = 0.6,
+  beta = 0.3
+)
+
+ramalan_des2 <- forecast(
+  des_2,
+  h = length(test.ts)
+)
+
+des_2
+```
+
+## 3. DES dengan Parameter Optimum
+
+```{r}
+des_opt <- HoltWinters(
+  train.ts,
+  gamma = FALSE
+)
+
+ramalan_desopt <- forecast(
+  des_opt,
+  h = length(test.ts)
+)
+
+des_opt
+```
+
+Parameter optimum diperoleh dengan membiarkan fungsi `HoltWinters()` menentukan nilai parameter pemulusan yang menghasilkan error terkecil pada data latih.
+
+## 4. Plot DES
+
+```{r}
+autoplot(ramalan_des2) +
+  autolayer(
+    fitted(des_2)[,1],
+    series = "Fitted DES"
+  ) +
+  xlab("Periode") +
+  ylab("Count") +
+  ggtitle("Double Exponential Smoothing")
+```
+
+## 5. Akurasi DES
+
+```{r}
+# Ramalan DES
+forecast_des1 <- as.numeric(ramalan_des1$mean)
+forecast_des2 <- as.numeric(ramalan_des2$mean)
+forecast_desopt <- as.numeric(ramalan_desopt$mean)
+
+# Menghitung akurasi
+akurasi_des1 <- hitung_akurasi(
+  test.ts,
+  forecast_des1
+)
+
+akurasi_des2 <- hitung_akurasi(
+  test.ts,
+  forecast_des2
+)
+
+akurasi_desopt <- hitung_akurasi(
+  test.ts,
+  forecast_desopt
+)
+
+akurasi_des <- rbind(
+  "DES Alpha 0.2 Beta 0.2" = akurasi_des1,
+  "DES Alpha 0.6 Beta 0.3" = akurasi_des2,
+  "DES Optimum" = akurasi_desopt
+)
+
+akurasi_des
+```
+
+Berdasarkan hasil evaluasi, model DES dengan nilai error terkecil merupakan model yang memberikan hasil peramalan paling baik pada data uji. Perbandingan dilakukan menggunakan SSE, MSE, RMSE, dan MAPE.
+
+# Perbandingan Metode
+
+Perbandingan metode dilakukan untuk menentukan metode pemulusan yang memberikan hasil peramalan terbaik pada data uji. Metode yang dibandingkan adalah SMA, DMA, SES, dan DES. Ukuran utama yang digunakan dalam menentukan metode terbaik adalah **MSE**, karena semakin kecil nilai MSE maka semakin kecil rata-rata kesalahan kuadrat hasil peramalan terhadap nilai aktual.
+
+Untuk SES dan DES digunakan model dengan parameter terbaik berdasarkan hasil evaluasi data uji.
+
+```{r}
+# Mengambil MSE terbaik dari SES
+MSE_ses_best <- min(akurasi_ses[, "MSE"])
+
+# Mengambil MSE terbaik dari DES
+MSE_des_best <- min(akurasi_des[, "MSE"])
+
+# Membuat tabel perbandingan
+perbandingan <- data.frame(
+  Metode = c(
+    "SMA",
+    "DMA",
+    "SES",
+    "DES"
+  ),
+  
+  MSE_Test = c(
+    MSE_sma,
+    MSE_dma,
+    MSE_ses_best,
+    MSE_des_best
+  )
+)
+
+# Mengurutkan berdasarkan MSE terkecil
+perbandingan <- perbandingan[
+  order(perbandingan$MSE_Test),
+]
+
+perbandingan
+```
+
+## Perbandingan Lengkap
+
+```{r}
+# Menentukan parameter/model terbaik
+best_ses <- rownames(akurasi_ses)[
+  which.min(akurasi_ses[, "MSE"])
+]
+
+best_des <- rownames(akurasi_des)[
+  which.min(akurasi_des[, "MSE"])
+]
+
+# Membuat tabel perbandingan lengkap
+hasil_akhir <- data.frame(
+  Metode = c(
+    "SMA",
+    "DMA",
+    best_ses,
+    best_des
+  ),
+  
+  SSE = c(
+    SSE_sma,
+    SSE_dma,
+    akurasi_ses[best_ses, "SSE"],
+    akurasi_des[best_des, "SSE"]
+  ),
+  
+  MSE = c(
+    MSE_sma,
+    MSE_dma,
+    akurasi_ses[best_ses, "MSE"],
+    akurasi_des[best_des, "MSE"]
+  ),
+  
+  RMSE = c(
+    RMSE_sma,
+    RMSE_dma,
+    akurasi_ses[best_ses, "RMSE"],
+    akurasi_des[best_des, "RMSE"]
+  ),
+  
+  MAPE = c(
+    MAPE_sma,
+    MAPE_dma,
+    akurasi_ses[best_ses, "MAPE"],
+    akurasi_des[best_des, "MAPE"]
+  )
+)
+
+hasil_akhir <- hasil_akhir[
+  order(hasil_akhir$MSE),
+]
+
+hasil_akhir
+```
+
+Berdasarkan perbandingan nilai MSE pada data uji, metode dengan nilai MSE paling kecil dipilih sebagai metode terbaik. Nilai MSE yang lebih kecil menunjukkan bahwa rata-rata kesalahan kuadrat antara nilai aktual dan hasil peramalan lebih rendah. Selain MSE, nilai SSE, RMSE, dan MAPE juga digunakan sebagai informasi pendukung dalam mengevaluasi performa masing-masing metode.
+
+```{r}
+# Menentukan metode terbaik
+metode_terbaik <- hasil_akhir$Metode[1]
+
+# Menampilkan hasil metode terbaik
+metode_terbaik
+```
+
+Berdasarkan hasil evaluasi, metode **`r metode_terbaik`** merupakan metode terbaik pada data uji karena menghasilkan nilai MSE paling kecil dibandingkan metode lainnya. Dengan demikian, metode tersebut memiliki hasil peramalan yang paling mendekati data aktual pada bagian data periode 195–388 yang dianalisis.
+
+# Kesimpulan
+
+Analisis dilakukan pada data Beijing Air Quality periode 195–388 dengan jumlah **194 observasi**. Data dibagi menjadi data latih sebanyak 155 observasi dan data uji sebanyak 39 observasi. Beberapa metode pemulusan yang diterapkan adalah Single Moving Average (SMA), Double Moving Average (DMA), Single Exponential Smoothing (SES), dan Double Exponential Smoothing (DES).
+
+Perbandingan metode dilakukan menggunakan ukuran SSE, MSE, RMSE, dan MAPE. Metode terbaik ditentukan berdasarkan nilai MSE pada data uji karena nilai MSE yang lebih kecil menunjukkan tingkat kesalahan peramalan yang lebih rendah.
+
+Berdasarkan hasil perbandingan, metode **`r metode_terbaik`** dipilih sebagai metode terbaik untuk data periode 195–388 karena menghasilkan nilai MSE terkecil. Hasil tersebut menunjukkan bahwa metode tersebut memberikan kemampuan peramalan yang paling baik dibandingkan metode lainnya pada bagian data yang dianalisis.
